@@ -15,6 +15,7 @@
     { "src": "/api/apuestas",      "dest": "/api/apuestas.js" },
     { "src": "/api/admin/(.*)",    "dest": "/api/admin.js"    },
     { "src": "/api/health",        "dest": "/api/health.js"   },
-    { "src": "/(.*)",              "dest": "/client/build/index.html" }
+    { "handle": "filesystem" },
+    { "src": "/(.*)",              "dest": "/index.html"       }
   ]
 }
