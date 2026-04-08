@@ -113,7 +113,7 @@ function NuevaApuesta({ token, usuario }) {
     setError('');
 
     try {
-      await axios.post('/api/apuestas/${apuestaCreada.id}/comprobante', {
+      await axios.post(`/api/apuestas/${apuestaCreada.id}/comprobante`, {
         comprobante: imagenBase64,
         numeroTransaccion: pago.numeroTransaccion,
         montoPagado: parseFloat(pago.montoPagado)
