@@ -6,31 +6,18 @@ let models = null;
 const getSequelize = () => {
   if (sequelize) return sequelize;
 
-  if (process.env.DATABASE_URL) {
-    // Neon / Supabase / Railway — connection string completa
-    sequelize = new Sequelize(process.env.DATABASE_URL, {
-      dialect: 'postgres',
-      logging: false,
-      dialectOptions: { ssl: { require: true, rejectUnauthorized: false } },
-      pool: { max: 3, min: 0, acquire: 30000, idle: 10000 }
-    });
-  } else {
-    sequelize = new Sequelize(
-      process.env.DB_NAME || 'jijasbet',
-      process.env.DB_USER || 'postgres',
-      process.env.DB_PASSWORD || '',
-      {
-        host: process.env.DB_HOST,
-        port: process.env.DB_PORT || 5432,
-        dialect: 'postgres',
-        logging: false,
-        dialectOptions: {
-          ssl: process.env.DB_SSL === 'true' ? { require: true, rejectUnauthorized: false } : false
-        },
-        pool: { max: 3, min: 0, acquire: 30000, idle: 10000 }
-      }
-    );
-  }
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error('DATABASE_URL no configurada en las variables de entorno de Vercel');
+
+  sequelize = new Sequelize(dbUrl, {
+    dialect: 'postgres',
+    dialectModule: require('pg'),
+    logging: false,
+    dialectOptions: {
+      ssl: { require: true, rejectUnauthorized: false }
+    },
+    pool: { max: 2, min: 0, acquire: 30000, idle: 10000 }
+  });
 
   return sequelize;
 };
