@@ -86,7 +86,7 @@ function AdminPanel({ token }) {
 
   const handleVerificar = async () => {
     try {
-      await axios.put(`api/admin/verificar/${apuestaSeleccionada.id}`, {}, {
+      await axios.put('api/admin/verificar/${apuestaSeleccionada.id}', {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMostrarModal(false);
@@ -104,7 +104,7 @@ function AdminPanel({ token }) {
     }
 
     try {
-      await axios.put(`/api/admin/rechazar/${apuestaSeleccionada.id}`, 
+      await axios.put('/api/admin/rechazar/${apuestaSeleccionada.id}', 
         { motivo },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -123,7 +123,7 @@ function AdminPanel({ token }) {
     }
 
     try {
-      await axios.put(`/api/admin/resultado/${apuestaSeleccionada.id}`, 
+      await axios.put('/api/admin/resultado/${apuestaSeleccionada.id}', 
         { resultado },
         { headers: { Authorization: `Bearer ${token}` } }
       );
