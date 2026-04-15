@@ -15,15 +15,8 @@ function Registro({ onLogin }) {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
-      const response = await axios.post('/api/auth/registro', {
-        nombre,
-        email,
-        contraseña,
-        telefono
-      });
-
+      const response = await axios.post('/api/auth/registro', { nombre, email, contraseña, telefono });
       onLogin(response.data.token, response.data.usuario);
       navigate('/dashboard');
     } catch (err) {
@@ -34,74 +27,73 @@ function Registro({ onLogin }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="card" style={{ maxWidth: '400px', width: '90%' }}>
-        <h1 style={{ textAlign: 'center', marginBottom: '2rem', color: '#667eea' }}>🎯 JIJASBET</h1>
-        <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Crear Cuenta</h2>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: '16px',
+        padding: '2.5rem',
+        width: '100%',
+        maxWidth: '420px',
+        position: 'relative',
+        boxShadow: '0 25px 60px rgba(0,0,0,0.5)'
+      }}>
+        <div style={{
+          position: 'absolute', top: 0, left: '10%', right: '10%', height: '1px',
+          background: 'linear-gradient(90deg, transparent, var(--gold), transparent)'
+        }} />
+
+        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div style={{
+            fontFamily: 'Rajdhani, sans-serif', fontSize: '2.2rem', fontWeight: 700,
+            color: 'var(--gold)', letterSpacing: '4px', textTransform: 'uppercase',
+            textShadow: '0 0 30px rgba(240,180,41,0.4)'
+          }}>🎯 JIJASBET</div>
+          <div style={{
+            fontSize: '0.72rem', color: 'var(--text-muted)', letterSpacing: '3px',
+            textTransform: 'uppercase', marginTop: '0.3rem', paddingBottom: '1.5rem',
+            borderBottom: '1px solid var(--border)'
+          }}>Plataforma de Apuestas</div>
+        </div>
+
+        <h2 style={{ fontSize: '1.3rem', marginBottom: '1.5rem', color: 'var(--text)' }}>Crear Cuenta</h2>
 
         {error && <div className="alert alert-error">{error}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="nombre">Nombre Completo</label>
-            <input
-              id="nombre"
-              type="text"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              required
-              placeholder="Tu nombre"
-            />
+            <label>Nombre Completo</label>
+            <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)}
+              required placeholder="Tu nombre" />
           </div>
-
           <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="tu@email.com"
-            />
+            <label>Email</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              required placeholder="tu@email.com" />
           </div>
-
-          <div className="form-group">
-            <label htmlFor="telefono">Teléfono (Opcional)</label>
-            <input
-              id="telefono"
-              type="tel"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              placeholder="9XX XXX XXX"
-            />
+          <div className="form-row">
+            <div className="form-group">
+              <label>Teléfono (Opcional)</label>
+              <input type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)}
+                placeholder="9XX XXX XXX" />
+            </div>
+            <div className="form-group">
+              <label>Contraseña</label>
+              <input type="password" value={contraseña} onChange={(e) => setContraseña(e.target.value)}
+                required minLength="6" placeholder="Mín. 6 caracteres" />
+            </div>
           </div>
-
-          <div className="form-group">
-            <label htmlFor="contraseña">Contraseña</label>
-            <input
-              id="contraseña"
-              type="password"
-              value={contraseña}
-              onChange={(e) => setContraseña(e.target.value)}
-              required
-              minLength="6"
-              placeholder="Mínimo 6 caracteres"
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            className="btn btn-primary" 
-            style={{ width: '100%', marginBottom: '1rem' }}
-            disabled={loading}
-          >
-            {loading ? 'Registrando...' : 'Crear Cuenta'}
+          <button type="submit" className="btn btn-primary"
+            style={{ width: '100%', marginTop: '0.5rem', padding: '0.9rem' }} disabled={loading}>
+            {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-          ¿Ya tienes cuenta? <Link to="/login" style={{ color: '#667eea', textDecoration: 'none', fontWeight: 'bold' }}>Inicia sesión aquí</Link>
+        <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          ¿Ya tienes cuenta?{' '}
+          <Link to="/login" style={{ color: 'var(--gold)', textDecoration: 'none', fontWeight: 600 }}>
+            Inicia sesión
+          </Link>
         </p>
       </div>
     </div>
