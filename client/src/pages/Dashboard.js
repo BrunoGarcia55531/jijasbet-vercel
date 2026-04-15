@@ -33,8 +33,8 @@ function Dashboard({ token }) {
     pendientes: apuestas.filter(a => a.estadoPago === 'pendiente').length,
     verificadas: apuestas.filter(a => a.estadoPago === 'verificado').length,
     rechazadas: apuestas.filter(a => a.estadoPago === 'rechazado').length,
-    montoTotal: apuestas.reduce((sum, a) => sum + (a.montoApuesta || 0), 0),
-    montoGanancia: apuestas.filter(a => a.apuestaGanada).reduce((sum, a) => sum + (a.montoGanancia || 0), 0)
+    montoTotal: apuestas.reduce((sum, a) => sum + parseFloat(a.montoApuesta || 0), 0),
+    montoGanancia: apuestas.filter(a => a.apuestaGanada).reduce((sum, a) => sum + parseFloat(a.montoGanancia || 0), 0)
   };
 
   if (loading) {
@@ -52,7 +52,7 @@ function Dashboard({ token }) {
           <p>Total de Apuestas</p>
         </div>
         <div className="stat-card">
-          <h3>S/. {estadisticas.montoTotal}</h3>
+          <h3>S/. {estadisticas.montoTotal.toFixed(2)}</h3>
           <p>Monto Total Apostado</p>
         </div>
         <div className="stat-card">
