@@ -3,25 +3,32 @@ import axios from 'axios';
 
 function Dashboard({ token }) {
   const [apuestas, setApuestas] = useState([]);
+  const [saldo, setSaldo] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState('todas');
 
-  const cargarApuestas = useCallback(async () => {
+  const cargarDatos = useCallback(async () => {
     try {
-      const response = await axios.get('/api/apuestas/mis-apuestas', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setApuestas(response.data);
+      const [apuestasRes, recargasRes] = await Promise.all([
+        axios.get('/api/apuestas/mis-apuestas', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('/api/recargas/mis-recargas', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      setApuestas(apuestasRes.data);
+      setSaldo(recargasRes.data.saldo);
     } catch (error) {
-      console.error('Error cargando apuestas:', error);
+      console.error('Error cargando datos:', error);
     } finally {
       setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
-    cargarApuestas();
-  }, [cargarApuestas]);
+    cargarDatos();
+  }, [cargarDatos]);
 
   const apuestasFiltradas = apuestas.filter(apuesta => {
     if (filtro === 'todas') return true;
@@ -33,8 +40,13 @@ function Dashboard({ token }) {
     pendientes: apuestas.filter(a => a.estadoPago === 'pendiente').length,
     verificadas: apuestas.filter(a => a.estadoPago === 'verificado').length,
     rechazadas: apuestas.filter(a => a.estadoPago === 'rechazado').length,
-    montoTotal: apuestas.reduce((sum, a) => sum + parseFloat(a.montoApuesta || 0), 0),
-    montoGanancia: apuestas.filter(a => a.apuestaGanada).reduce((sum, a) => sum + parseFloat(a.montoGanancia || 0), 0)
+    // Solo contar apuestas NO rechazadas en el monto
+    montoTotal: apuestas
+      .filter(a => a.estadoPago !== 'rechazado')
+      .reduce((sum, a) => sum + parseFloat(a.montoApuesta || 0), 0),
+    montoGanancia: apuestas
+      .filter(a => a.apuestaGanada)
+      .reduce((sum, a) => sum + parseFloat(a.montoGanancia || 0), 0)
   };
 
   if (loading) {
@@ -48,6 +60,10 @@ function Dashboard({ token }) {
       {/* Estadísticas */}
       <div className="stats-grid">
         <div className="stat-card">
+          <h3 style={{ color: '#4CAF50' }}>S/. {parseFloat(saldo).toFixed(2)}</h3>
+          <p>Saldo Disponible</p>
+        </div>
+        <div className="stat-card">
           <h3>{estadisticas.total}</h3>
           <p>Total de Apuestas</p>
         </div>
@@ -56,41 +72,46 @@ function Dashboard({ token }) {
           <p>Monto Total Apostado</p>
         </div>
         <div className="stat-card">
-          <h3>{estadisticas.verificadas}</h3>
-          <p>Apuestas Verificadas</p>
-        </div>
-        <div className="stat-card">
-          <h3>S/. {estadisticas.montoGanancia}</h3>
+          <h3>S/. {estadisticas.montoGanancia.toFixed(2)}</h3>
           <p>Ganancias Potenciales</p>
         </div>
       </div>
 
+      <div className="card" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <strong style={{ color: 'white' }}>💰 Saldo: S/. {parseFloat(saldo).toFixed(2)}</strong>
+        </div>
+        <a href="/recargar" className="btn btn-success" style={{ fontSize: '0.9rem' }}>
+          + Recargar Saldo
+        </a>
+      </div>
+
       <div className="card">
         <h2 style={{ marginBottom: '1.5rem' }}>Filtrar por estado</h2>
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-          <button 
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <button
             className={`btn ${filtro === 'todas' ? 'btn-primary' : 'btn-warning'}`}
             onClick={() => setFiltro('todas')}
           >
-            Todas
+            TODAS
           </button>
-          <button 
+          <button
             className={`btn ${filtro === 'pendiente' ? 'btn-primary' : 'btn-warning'}`}
             onClick={() => setFiltro('pendiente')}
           >
-            Pendientes
+            PENDIENTES
           </button>
-          <button 
+          <button
             className={`btn ${filtro === 'verificado' ? 'btn-primary' : 'btn-success'}`}
             onClick={() => setFiltro('verificado')}
           >
-            Verificadas
+            VERIFICADAS
           </button>
-          <button 
+          <button
             className={`btn ${filtro === 'rechazado' ? 'btn-primary' : 'btn-danger'}`}
             onClick={() => setFiltro('rechazado')}
           >
-            Rechazadas
+            RECHAZADAS
           </button>
         </div>
 
@@ -107,8 +128,7 @@ function Dashboard({ token }) {
                 <th>Monto</th>
                 <th>Cuota</th>
                 <th>Ganancia Potencial</th>
-                <th>Estado Pago</th>
-                <th>Acción</th>
+                <th>Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -125,24 +145,16 @@ function Dashboard({ token }) {
                     {apuesta.tipoApuesta === 'visitante' && '✈️ Visitante'}
                   </td>
                   <td>S/. {Number(apuesta.montoApuesta).toFixed(2)}</td>
-                  <td>{Number(apuesta.cuota || apuesta.Evento?.cuota || 1).toFixed(2)}</td>
+                  <td>{Number(apuesta.cuota || 1).toFixed(2)}</td>
                   <td>S/. {Number(apuesta.montoGanancia).toFixed(2)}</td>
                   <td>
                     <span className={`status status-${apuesta.estadoPago}`}>
                       {apuesta.estadoPago}
                     </span>
-                  </td>
-                  <td>
-                    {apuesta.estadoPago === 'pendiente' && (
-                      <a href={`/nueva-apuesta?edit=${apuesta.id}`} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
-                        Completar Pago
-                      </a>
-                    )}
-                    {apuesta.estadoPago === 'rechazado' && (
-                      <div style={{ color: '#e74c3c' }}>
-                        <strong>Rechazado</strong>
-                        <p style={{ fontSize: '0.85rem' }}>{apuesta.motivoRechazo}</p>
-                      </div>
+                    {apuesta.estadoPago === 'rechazado' && apuesta.motivoRechazo && (
+                      <p style={{ fontSize: '0.8rem', color: '#e74c3c', marginTop: '0.25rem' }}>
+                        {apuesta.motivoRechazo}
+                      </p>
                     )}
                   </td>
                 </tr>
