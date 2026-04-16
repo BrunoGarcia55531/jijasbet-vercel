@@ -74,7 +74,7 @@ module.exports = async (req, res) => {
         nombreUsuario: usuario.nombre, tipoApuesta,
         montoApuesta: monto, cuota: cuotaApuesta,
         montoGanancia: monto * cuotaApuesta,
-        estadoPago: 'verificado' // automáticamente verificado al pagar con saldo
+        estado: 'activa' // automáticamente verificado al pagar con saldo
       });
 
       const apuestaConEvento = await Apuesta.findByPk(apuesta.id, { include: [Evento] });
