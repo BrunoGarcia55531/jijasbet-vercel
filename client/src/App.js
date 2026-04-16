@@ -5,6 +5,7 @@ import Registro from './pages/Registro';
 import Dashboard from './pages/Dashboard';
 import NuevaApuesta from './pages/NuevaApuesta';
 import AdminPanel from './pages/AdminPanel';
+import Recargar from './pages/Recargar';
 import './App.css';
 
 function App() {
@@ -40,6 +41,7 @@ function App() {
                 {usuario?.esAdmin && <a href="/admin">Panel Admin</a>}
                 <a href="/dashboard">Mis Apuestas</a>
                 <a href="/nueva-apuesta">Nueva Apuesta</a>
+                <a href="/recargar">💳 Recargar</a>
                 <button onClick={handleLogout} className="btn-logout">Salir</button>
               </div>
             </div>
@@ -57,6 +59,7 @@ function App() {
             <>
               <Route path="/dashboard" element={<Dashboard token={token} />} />
               <Route path="/nueva-apuesta" element={<NuevaApuesta token={token} usuario={usuario} />} />
+              <Route path="/recargar" element={<Recargar token={token} />} />
               {usuario?.esAdmin && <Route path="/admin" element={<AdminPanel token={token} />} />}
               <Route path="*" element={<Navigate to="/dashboard" />} />
             </>
