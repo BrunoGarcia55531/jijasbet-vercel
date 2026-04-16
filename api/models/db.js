@@ -45,7 +45,7 @@ const getModels = async () => {
   Recarga.belongsTo(Usuario, { foreignKey: 'usuarioId' });
 
   await seq.authenticate();
-  await seq.sync();
+  await seq.sync({ alter: true });
 
   models = { Usuario, Apuesta, Evento, Recarga };
   return models;
