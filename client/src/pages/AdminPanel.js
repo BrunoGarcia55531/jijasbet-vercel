@@ -12,7 +12,12 @@ function AdminPanel({ token }) {
   const [resultado, setResultado] = useState('');
   const [mostrarModal, setMostrarModal] = useState(false);
   const [tipoAccion, setTipoAccion] = useState(''); // 'verificar', 'rechazar', 'resultado'
-  const [pestaña, setPestaña] = useState('apuestas'); // 'apuestas' o 'eventos'
+  const [pestaña, setPestaña] = useState('apuestas'); // 'apuestas', 'eventos', 'recargas'
+  const [recargas, setRecargas] = useState([]);
+  const [filtroRecargas, setFiltroRecargas] = useState('pendiente');
+  const [recargaSeleccionada, setRecargaSeleccionada] = useState(null);
+  const [mostrarModalRecarga, setMostrarModalRecarga] = useState(false);
+  const [motivoRecarga, setMotivoRecarga] = useState('');
 
   // Estado para crear eventos
   const [nuevoEvento, setNuevoEvento] = useState({
@@ -48,7 +53,7 @@ function AdminPanel({ token }) {
 
   const cargarDatos = useCallback(async () => {
     try {
-      const [apuestasRes, estadRes, eventosRes] = await Promise.all([
+      const [apuestasRes, estadRes, eventosRes, recargasRes] = await Promise.all([
         axios.get('/api/admin/todas-apuestas', {
           headers: { Authorization: `Bearer ${token}` }
         }),
@@ -57,12 +62,16 @@ function AdminPanel({ token }) {
         }),
         axios.get('/api/admin/eventos', {
           headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('/api/recargas', {
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
 
       setApuestas(apuestasRes.data);
       setEstadisticas(estadRes.data);
       setEventos(eventosRes.data);
+      setRecargas(recargasRes.data);
     } catch (error) {
       console.error('Error cargando datos:', error);
     } finally {
@@ -223,7 +232,7 @@ function AdminPanel({ token }) {
       </div>
 
       {/* Pestañas */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
         <button
           className={`btn ${pestaña === 'eventos' ? 'btn-primary' : 'btn-warning'}`}
           onClick={() => setPestaña('eventos')}
@@ -235,6 +244,22 @@ function AdminPanel({ token }) {
           onClick={() => setPestaña('apuestas')}
         >
           🎲 Gestionar Apuestas
+        </button>
+        <button
+          className={`btn ${pestaña === 'recargas' ? 'btn-primary' : 'btn-success'}`}
+          onClick={() => setPestaña('recargas')}
+          style={{ position: 'relative' }}
+        >
+          💳 Recargas
+          {recargas.filter(r => r.estado === 'pendiente').length > 0 && (
+            <span style={{
+              background: '#e74c3c', color: 'white',
+              borderRadius: '50%', padding: '0.1rem 0.4rem',
+              fontSize: '0.75rem', marginLeft: '0.5rem'
+            }}>
+              {recargas.filter(r => r.estado === 'pendiente').length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -698,6 +723,201 @@ function AdminPanel({ token }) {
                     disabled={!resultado}
                   >
                     Confirmar Resultado
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SECCIÓN: RECARGAS */}
+      {pestaña === 'recargas' && (
+        <div className="card">
+          <h2 style={{ marginBottom: '1.5rem' }}>💳 Solicitudes de Recarga</h2>
+
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+            {['pendiente', 'verificado', 'rechazado', 'todas'].map(estado => (
+              <button
+                key={estado}
+                className={`btn ${filtroRecargas === estado
+                  ? 'btn-primary'
+                  : estado === 'verificado' ? 'btn-success'
+                  : estado === 'rechazado' ? 'btn-danger'
+                  : 'btn-warning'}`}
+                onClick={() => setFiltroRecargas(estado)}
+              >
+                {estado.charAt(0).toUpperCase() + estado.slice(1)}
+                {estado !== 'todas' && (
+                  <span style={{ marginLeft: '0.4rem' }}>
+                    ({recargas.filter(r => r.estado === estado).length})
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {recargas.filter(r => filtroRecargas === 'todas' || r.estado === filtroRecargas).length === 0 ? (
+            <p style={{ textAlign: 'center', color: '#999', padding: '2rem' }}>
+              No hay recargas con este estado
+            </p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Monto</th>
+                  <th>N° Transacción</th>
+                  <th>Comprobante</th>
+                  <th>Estado</th>
+                  <th>Fecha</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recargas
+                  .filter(r => filtroRecargas === 'todas' || r.estado === filtroRecargas)
+                  .map(recarga => (
+                  <tr key={recarga.id}>
+                    <td><strong>{recarga.nombreUsuario}</strong></td>
+                    <td><strong style={{ color: '#4CAF50' }}>S/. {parseFloat(recarga.monto).toFixed(2)}</strong></td>
+                    <td style={{ fontSize: '0.85rem' }}>{recarga.numeroTransaccion}</td>
+                    <td>
+                      {recarga.comprobante && (
+                        <img
+                          src={recarga.comprobante}
+                          alt="Comprobante"
+                          style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer' }}
+                          onClick={() => window.open(recarga.comprobante, '_blank')}
+                        />
+                      )}
+                    </td>
+                    <td>
+                      <span style={{
+                        color: recarga.estado === 'verificado' ? '#4CAF50'
+                             : recarga.estado === 'rechazado' ? '#e74c3c' : '#f0c040',
+                        fontWeight: 'bold',
+                        textTransform: 'capitalize'
+                      }}>
+                        {recarga.estado}
+                      </span>
+                      {recarga.estado === 'rechazado' && recarga.motivoRechazo && (
+                        <p style={{ fontSize: '0.75rem', color: '#e74c3c', margin: 0 }}>{recarga.motivoRechazo}</p>
+                      )}
+                    </td>
+                    <td style={{ fontSize: '0.85rem', color: '#999' }}>
+                      {new Date(recarga.createdAt).toLocaleDateString('es-PE')}
+                    </td>
+                    <td>
+                      {recarga.estado === 'pendiente' && (
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            className="btn btn-success"
+                            style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+                            onClick={() => {
+                              setRecargaSeleccionada(recarga);
+                              setMostrarModalRecarga('verificar');
+                            }}
+                          >
+                            ✅ Verificar
+                          </button>
+                          <button
+                            className="btn btn-danger"
+                            style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+                            onClick={() => {
+                              setRecargaSeleccionada(recarga);
+                              setMotivoRecarga('');
+                              setMostrarModalRecarga('rechazar');
+                            }}
+                          >
+                            ❌ Rechazar
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* Modal de Recarga */}
+      {mostrarModalRecarga && recargaSeleccionada && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            background: '#1e2a3a', padding: '2rem',
+            borderRadius: '12px', maxWidth: '450px', width: '90%'
+          }}>
+            {mostrarModalRecarga === 'verificar' ? (
+              <>
+                <h3 style={{ color: 'white', marginBottom: '1rem' }}>✅ Verificar Recarga</h3>
+                <p style={{ color: '#ccc', marginBottom: '1.5rem' }}>
+                  ¿Confirmas que <strong style={{ color: 'white' }}>{recargaSeleccionada.nombreUsuario}</strong> realizó
+                  el pago de <strong style={{ color: '#4CAF50' }}>S/. {parseFloat(recargaSeleccionada.monto).toFixed(2)}</strong>?
+                  <br /><br />
+                  Se acreditará automáticamente a su saldo.
+                </p>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button className="btn btn-warning" style={{ flex: 1 }} onClick={() => setMostrarModalRecarga(false)}>
+                    Cancelar
+                  </button>
+                  <button className="btn btn-success" style={{ flex: 1 }} onClick={async () => {
+                    try {
+                      await axios.put(`/api/recargas/${recargaSeleccionada.id}/verificar`, {}, {
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      setMostrarModalRecarga(false);
+                      cargarDatos();
+                      alert(`✅ Recarga verificada. S/. ${parseFloat(recargaSeleccionada.monto).toFixed(2)} acreditados.`);
+                    } catch (err) {
+                      alert('Error: ' + err.response?.data?.error);
+                    }
+                  }}>
+                    Confirmar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ color: 'white', marginBottom: '1rem' }}>❌ Rechazar Recarga</h3>
+                <p style={{ color: '#ccc', marginBottom: '1rem' }}>
+                  Recarga de <strong style={{ color: 'white' }}>{recargaSeleccionada.nombreUsuario}</strong> por
+                  <strong style={{ color: '#e74c3c' }}> S/. {parseFloat(recargaSeleccionada.monto).toFixed(2)}</strong>
+                </p>
+                <div className="form-group">
+                  <label>Motivo del rechazo</label>
+                  <input
+                    type="text"
+                    value={motivoRecarga}
+                    onChange={(e) => setMotivoRecarga(e.target.value)}
+                    placeholder="Ej: Comprobante no válido"
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button className="btn btn-warning" style={{ flex: 1 }} onClick={() => setMostrarModalRecarga(false)}>
+                    Cancelar
+                  </button>
+                  <button className="btn btn-danger" style={{ flex: 1 }} onClick={async () => {
+                    if (!motivoRecarga.trim()) { alert('Ingresa el motivo'); return; }
+                    try {
+                      await axios.put(`/api/recargas/${recargaSeleccionada.id}/rechazar`,
+                        { motivo: motivoRecarga },
+                        { headers: { Authorization: `Bearer ${token}` } }
+                      );
+                      setMostrarModalRecarga(false);
+                      cargarDatos();
+                      alert('Recarga rechazada');
+                    } catch (err) {
+                      alert('Error: ' + err.response?.data?.error);
+                    }
+                  }}>
+                    Rechazar
                   </button>
                 </div>
               </>
