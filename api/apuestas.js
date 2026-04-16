@@ -37,43 +37,48 @@ module.exports = async (req, res) => {
     } catch (e) { return res.status(401).json({ error: e.message }); }
   }
 
-  // POST /api/apuestas/:id/comprobante
-  if (req.method === 'POST' && action === 'comprobante') {
-    try {
-      const decoded = verificarToken(req);
-      const { Apuesta } = await getModels();
-      const { comprobante, numeroTransaccion, montoPagado } = req.body;
-      const apuesta = await Apuesta.findByPk(sub);
-      if (!apuesta) return res.status(404).json({ error: 'Apuesta no encontrada' });
-      if (apuesta.usuarioId !== decoded.id) return res.status(403).json({ error: 'No autorizado' });
-      await apuesta.update({ comprobante, numeroTransaccion, montoPagado, estadoPago: 'pendiente' });
-      return res.json({ message: 'Comprobante recibido. Pendiente de verificación', apuesta });
-    } catch (e) { return res.status(500).json({ error: e.message }); }
-  }
-
   // POST /api/apuestas
   if (req.method === 'POST' && !sub) {
     try {
       const decoded = verificarToken(req);
       const { Apuesta, Evento, Usuario } = await getModels();
       const { eventoId, tipoApuesta, montoApuesta } = req.body;
+
       if (!eventoId || !tipoApuesta || !montoApuesta)
         return res.status(400).json({ error: 'Faltan campos requeridos' });
+
+      const monto = parseFloat(montoApuesta);
+      if (isNaN(monto) || monto <= 0)
+        return res.status(400).json({ error: 'Monto inválido' });
+
+      const usuario = await Usuario.findByPk(decoded.id);
+      if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+      const saldoActual = parseFloat(usuario.saldo || 0);
+      if (saldoActual < monto)
+        return res.status(400).json({ error: `Saldo insuficiente. Tu saldo es S/. ${saldoActual.toFixed(2)}` });
+
       const evento = await Evento.findByPk(eventoId);
       if (!evento) return res.status(404).json({ error: 'Evento no encontrado' });
-      const usuario = await Usuario.findByPk(decoded.id);
+
       let cuotaApuesta = 1;
       if (tipoApuesta === 'local')     cuotaApuesta = parseFloat(evento.cuotaLocal)    || 1;
       if (tipoApuesta === 'empate')    cuotaApuesta = parseFloat(evento.cuotaEmpate)   || 1;
       if (tipoApuesta === 'visitante') cuotaApuesta = parseFloat(evento.cuotaVisitante) || 1;
+
+      // Descontar saldo
+      await usuario.update({ saldo: saldoActual - monto });
+
       const apuesta = await Apuesta.create({
         usuarioId: decoded.id, eventoId,
         nombreUsuario: usuario.nombre, tipoApuesta,
-        montoApuesta, cuota: cuotaApuesta,
-        montoGanancia: montoApuesta * cuotaApuesta
+        montoApuesta: monto, cuota: cuotaApuesta,
+        montoGanancia: monto * cuotaApuesta,
+        estadoPago: 'verificado' // automáticamente verificado al pagar con saldo
       });
+
       const apuestaConEvento = await Apuesta.findByPk(apuesta.id, { include: [Evento] });
-      return res.json(apuestaConEvento);
+      return res.json({ apuesta: apuestaConEvento, saldoRestante: saldoActual - monto });
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
