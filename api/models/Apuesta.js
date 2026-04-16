@@ -18,7 +18,7 @@ module.exports = (sequelize) => {
       references: { model: 'Eventos', key: 'id' }
     },
     nombreUsuario: DataTypes.STRING,
-    
+
     // Apuesta
     tipoApuesta: DataTypes.STRING, // local, empate, visitante
     montoApuesta: DataTypes.DECIMAL(10, 2),
@@ -27,19 +27,14 @@ module.exports = (sequelize) => {
       allowNull: true
     },
     montoGanancia: DataTypes.DECIMAL(10, 2),
-    
-    // Pago Yape
-    comprobante: DataTypes.TEXT, // Base64
-    numeroTransaccion: DataTypes.STRING,
-    montoPagado: DataTypes.DECIMAL(10, 2),
-    estadoPago: {
-      type: DataTypes.ENUM('pendiente', 'verificado', 'rechazado'),
-      defaultValue: 'pendiente'
+
+    // Estado de la apuesta (ya no depende del pago)
+    estado: {
+      type: DataTypes.ENUM('activa', 'ganada', 'perdida', 'cancelada'),
+      defaultValue: 'activa'
     },
-    motivoRechazo: DataTypes.TEXT,
-    
-    // Resultado
-    resultadoPartido: DataTypes.STRING, // local, empate, visitante
+
+    // Resultado (se llena cuando el admin cierra el evento)
     apuestaGanada: DataTypes.BOOLEAN
   }, {
     timestamps: true
@@ -47,4 +42,3 @@ module.exports = (sequelize) => {
 
   return Apuesta;
 };
-
