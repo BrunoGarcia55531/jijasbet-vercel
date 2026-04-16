@@ -30,20 +30,24 @@ const getModels = async () => {
   const usuarioModel = require('./Usuario');
   const apuestaModel = require('./Apuesta');
   const eventoModel  = require('./Evento');
+  const recargaModel = require('./Recarga');
 
   const Usuario = usuarioModel(seq);
   const Apuesta = apuestaModel(seq);
   const Evento  = eventoModel(seq);
+  const Recarga = recargaModel(seq);
 
   Usuario.hasMany(Apuesta, { foreignKey: 'usuarioId', onDelete: 'CASCADE' });
   Apuesta.belongsTo(Usuario, { foreignKey: 'usuarioId' });
   Evento.hasMany(Apuesta,  { foreignKey: 'eventoId',  onDelete: 'CASCADE' });
   Apuesta.belongsTo(Evento, { foreignKey: 'eventoId' });
+  Usuario.hasMany(Recarga, { foreignKey: 'usuarioId', onDelete: 'CASCADE' });
+  Recarga.belongsTo(Usuario, { foreignKey: 'usuarioId' });
 
   await seq.authenticate();
   await seq.sync();
 
-  models = { Usuario, Apuesta, Evento };
+  models = { Usuario, Apuesta, Evento, Recarga };
   return models;
 };
 
