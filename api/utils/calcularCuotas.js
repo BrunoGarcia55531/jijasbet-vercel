@@ -68,9 +68,9 @@ function calcularCuotas(pL, pE, pV, margen = MARGEN_DEFAULT) {
   const overround = 1/cL + 1/cE + 1/cV;
 
   return {
-    cuotaLocal:      +cL.toFixed(3),
-    cuotaEmpate:     +cE.toFixed(3),
-    cuotaVisitante:  +cV.toFixed(3),
+    cuotaLocal:      +cL.toFixed(2),
+    cuotaEmpate:     +cE.toFixed(2),
+    cuotaVisitante:  +cV.toFixed(2),
     overround:       +overround.toFixed(4),
     margenEfectivo:  +((overround - 1) * 100).toFixed(2),
     probabilidades:  { local: +nL.toFixed(4), empate: +nE.toFixed(4), visitante: +nV.toFixed(4) }
@@ -143,4 +143,122 @@ function cuotasDesdeProbs(pLPct, pEPct, pVPct, margenPct = 8) {
   return calcularCuotas(pLPct / 100, pEPct / 100, pVPct / 100, margenPct / 100);
 }
 
-module.exports = { calcularCuotas, recalcularCuotasDinamicas, cuotasDesdeProbs, IMPACTO };
+/**
+ * Calcula probabilidades base automáticamente sin intervención del admin.
+ *
+ * FACTORES considerados:
+ *   1. Ventaja de local (+8% base para el equipo de casa)
+ *   2. Historial de enfrentamientos previos entre estos dos equipos
+ *      (extraído del historialGlobal por nombres de equipo)
+ *   3. Liga — ligas más competitivas tienen mayor tendencia al empate
+ *   4. Momentum: si un equipo ganó sus últimos N partidos en esta liga
+ *
+ * Si no hay historial, devuelve distribución neutra ajustada por ventaja local.
+ */
+function calcularProbsAutomaticas(equipoLocal, equipoVisitante, liga, historialGlobal = []) {
+  // ── 1. Base: ventaja local ──────────────────────────────────────────────
+  let pL = 0.42;   // local siempre parte con ligera ventaja
+  let pE = 0.27;
+  let pV = 0.31;
+
+  // ── 2. Factor liga (ligas con más empates vs ligas goleadoras) ──────────
+  const FACTOR_LIGA = {
+    'Primera División':      { l: 1.05, e: 1.10, v: 0.95 },  // fútbol peruano, más parejo
+    'Copa Libertadores':     { l: 1.00, e: 1.05, v: 1.00 },
+    'Copa Sudamericana':     { l: 1.00, e: 1.05, v: 1.00 },
+    'LaLiga':                { l: 1.08, e: 0.95, v: 1.05 },  // dominio local alto
+    'Premier League':        { l: 1.05, e: 1.00, v: 1.00 },
+    'Serie A':               { l: 1.00, e: 1.15, v: 0.95 },  // más empates históricos
+    'Bundesliga':            { l: 1.08, e: 0.95, v: 1.05 },
+    'Ligue 1':               { l: 1.05, e: 1.00, v: 1.00 },
+  };
+  const fl = FACTOR_LIGA[liga] || { l: 1.0, e: 1.0, v: 1.0 };
+  pL *= fl.l; pE *= fl.e; pV *= fl.v;
+
+  // ── 3. Historial de enfrentamientos entre estos equipos ─────────────────
+  const nombreLocal = (equipoLocal || '').toLowerCase().trim();
+  const nombreVisit = (equipoVisitante || '').toLowerCase().trim();
+
+  // Filtrar partidos donde participaron ambos equipos
+  const enfrentamientos = historialGlobal.filter(p => {
+    const eL = (p.equipoLocal || '').toLowerCase().trim();
+    const eV = (p.equipoVisitante || '').toLowerCase().trim();
+    return (
+      (eL === nombreLocal  && eV === nombreVisit) ||
+      (eL === nombreVisit  && eV === nombreLocal)
+    );
+  });
+
+  if (enfrentamientos.length >= 2) {
+    let gLocal = 0, gEmpate = 0, gVisit = 0;
+    for (const p of enfrentamientos) {
+      const eL = (p.equipoLocal || '').toLowerCase().trim();
+      // Normalizar: ¿el equipo local actual fue local o visitante en este historial?
+      const eraLocal = eL === nombreLocal;
+      if (p.resultado === 'local')     { if (eraLocal) gLocal++; else gVisit++; }
+      else if (p.resultado === 'empate') { gEmpate++; }
+      else if (p.resultado === 'visitante') { if (eraLocal) gVisit++; else gLocal++; }
+    }
+    const total = gLocal + gEmpate + gVisit;
+    if (total > 0) {
+      // Mezclar 60% historial + 40% base con ventaja local/liga
+      const hL = gLocal / total;
+      const hE = gEmpate / total;
+      const hV = gVisit / total;
+      // Peso: más partidos → más confianza en el historial (máx 70%)
+      const peso = Math.min(0.70, 0.30 + enfrentamientos.length * 0.05);
+      pL = peso * hL + (1 - peso) * pL;
+      pE = peso * hE + (1 - peso) * pE;
+      pV = peso * hV + (1 - peso) * pV;
+    }
+  }
+
+  // ── 4. Momentum de cada equipo (últimos 5 partidos en esta liga) ─────────
+  const ultimosLocal = historialGlobal
+    .filter(p => {
+      const eL = (p.equipoLocal || '').toLowerCase().trim();
+      const eV = (p.equipoVisitante || '').toLowerCase().trim();
+      return (eL === nombreLocal || eV === nombreLocal) && (p.liga || '') === liga;
+    })
+    .slice(-5);
+
+  const ultimosVisit = historialGlobal
+    .filter(p => {
+      const eL = (p.equipoLocal || '').toLowerCase().trim();
+      const eV = (p.equipoVisitante || '').toLowerCase().trim();
+      return (eL === nombreVisit || eV === nombreVisit) && (p.liga || '') === liga;
+    })
+    .slice(-5);
+
+  const puntosLocal = ultimosLocal.reduce((acc, p) => {
+    const eraLocal = (p.equipoLocal || '').toLowerCase().trim() === nombreLocal;
+    if (p.resultado === 'empate') return acc + 1;
+    if ((p.resultado === 'local' && eraLocal) || (p.resultado === 'visitante' && !eraLocal)) return acc + 3;
+    return acc;
+  }, 0);
+
+  const puntosVisit = ultimosVisit.reduce((acc, p) => {
+    const eraLocal = (p.equipoLocal || '').toLowerCase().trim() === nombreVisit;
+    if (p.resultado === 'empate') return acc + 1;
+    if ((p.resultado === 'local' && eraLocal) || (p.resultado === 'visitante' && !eraLocal)) return acc + 3;
+    return acc;
+  }, 0);
+
+  const maxPuntos = ultimosLocal.length * 3 || 1;
+  // Factor de forma: de 0.85 a 1.15
+  const formaLocal = 0.85 + (puntosLocal / maxPuntos) * 0.30;
+  const formaVisit = 0.85 + (puntosVisit / (ultimosVisit.length * 3 || 1)) * 0.30;
+
+  pL = Math.max(0.01, pL * formaLocal);
+  pV = Math.max(0.01, pV * formaVisit);
+
+  // Normalizar para que sumen 1
+  const suma = pL + pE + pV;
+  return {
+    probBaseLocal:      +(pL / suma).toFixed(4),
+    probBaseEmpate:     +(pE / suma).toFixed(4),
+    probBaseVisitante:  +(pV / suma).toFixed(4),
+  };
+}
+
+module.exports = { calcularCuotas, recalcularCuotasDinamicas, cuotasDesdeProbs, calcularProbsAutomaticas, IMPACTO };
