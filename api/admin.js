@@ -91,8 +91,8 @@ module.exports = async (req, res) => {
     return res.json({ totalApuestas, apuestasActivas, apuestasGanadas, apuestasPerdidas, totalMonto });
   }
 
-  // ── CREAR EVENTO ──
-  if (req.method === 'POST' && sub === 'eventos') {
+  // ── CREAR EVENTO ── (solo si NO hay :id en la URL)
+  if (req.method === 'POST' && sub === 'eventos' && !id) {
     const { equipoLocal, equipoVisitante, liga, fechaPartido } = req.body;
     if (!equipoLocal || !equipoVisitante || !fechaPartido)
       return res.status(400).json({ error: 'Faltan campos requeridos' });
