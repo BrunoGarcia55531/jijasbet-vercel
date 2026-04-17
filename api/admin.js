@@ -111,7 +111,7 @@ module.exports = async (req, res) => {
     }));
 
     const probs = calcularProbsAutomaticas(equipoLocal, equipoVisitante, liga || 'Primera División', historialGlobal);
-    const MARGEN_DEFAULT = 0.08;
+    const MARGEN_DEFAULT = 0.18;
     const cuotas = calcularCuotas(probs.probBaseLocal, probs.probBaseEmpate, probs.probBaseVisitante, MARGEN_DEFAULT);
 
     const evento = await Evento.create({
