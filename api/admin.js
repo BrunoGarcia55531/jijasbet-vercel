@@ -1,8 +1,41 @@
 const jwt = require('jsonwebtoken');
 const { getModels } = require('./models/db');
-const { calcularCuotas, recalcularCuotasDinamicas, cuotasDesdeProbs } = require('./utils/calcularCuotas');
+const { calcularCuotas, recalcularCuotasDinamicas, cuotasDesdeProbs, calcularProbsAutomaticas } = require('./utils/calcularCuotas');
 
 const SECRET = process.env.JWT_SECRET || 'tu_secret_key_muy_seguro';
+
+/**
+ * Calcula el minuto actual del partido basado en la hora de inicio y la fase.
+ * - primera_mitad:  1-45
+ * - descanso:       45 (fijo)
+ * - segunda_mitad:  46-90
+ * - pre/finalizado: 0 / 90
+ */
+function calcularMinutoAutomatico(evento) {
+  const fase = evento.fase || 'pre';
+  if (fase === 'pre') return 0;
+  if (fase === 'descanso') return 45;
+  if (fase === 'finalizado') return 90;
+
+  // Si hay fecha de inicio guardada, calculamos desde ahí
+  const inicio = evento.inicioPartido ? new Date(evento.inicioPartido) : null;
+  if (!inicio) {
+    // Fallback: usar el minuto almacenado
+    return parseInt(evento.minuto) || (fase === 'segunda_mitad' ? 46 : 1);
+  }
+
+  const ahora = new Date();
+  const diffMs = ahora - inicio;
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (fase === 'primera_mitad') {
+    return Math.min(Math.max(diffMin + 1, 1), 45);
+  } else if (fase === 'segunda_mitad') {
+    // En segunda mitad sumamos 45 min de descanso (~15 min)
+    return Math.min(Math.max(diffMin - 60 + 46, 46), 90);
+  }
+  return parseInt(evento.minuto) || 0;
+}
 
 const verificarAdmin = async (req, Usuario) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -60,26 +93,40 @@ module.exports = async (req, res) => {
 
   // ── CREAR EVENTO ──
   if (req.method === 'POST' && sub === 'eventos') {
-    const { equipoLocal, equipoVisitante, liga, fechaPartido, probLocal, probEmpate, probVisitante, margen } = req.body;
-    if (!equipoLocal || !equipoVisitante || !fechaPartido || !probLocal || !probEmpate || !probVisitante)
+    const { equipoLocal, equipoVisitante, liga, fechaPartido } = req.body;
+    if (!equipoLocal || !equipoVisitante || !fechaPartido)
       return res.status(400).json({ error: 'Faltan campos requeridos' });
 
-    const margenVal = parseFloat(margen) / 100 || 0.08;
-    const cuotas = cuotasDesdeProbs(parseFloat(probLocal), parseFloat(probEmpate), parseFloat(probVisitante), parseFloat(margen) || 8);
+    // Obtener historial de eventos finalizados para calcular probabilidades automáticas
+    const eventosFinalizados = await Evento.findAll({
+      where: { estado: 'finalizado' },
+      attributes: ['equipoLocal', 'equipoVisitante', 'liga', 'resultadoPartido'],
+      order: [['createdAt', 'ASC']]
+    });
+    const historialGlobal = eventosFinalizados.map(e => ({
+      equipoLocal: e.equipoLocal,
+      equipoVisitante: e.equipoVisitante,
+      liga: e.liga,
+      resultado: e.resultadoPartido
+    }));
+
+    const probs = calcularProbsAutomaticas(equipoLocal, equipoVisitante, liga || 'Primera División', historialGlobal);
+    const MARGEN_DEFAULT = 0.08;
+    const cuotas = calcularCuotas(probs.probBaseLocal, probs.probBaseEmpate, probs.probBaseVisitante, MARGEN_DEFAULT);
 
     const evento = await Evento.create({
       equipoLocal, equipoVisitante, liga, fechaPartido,
       cuotaLocal: cuotas.cuotaLocal, cuotaEmpate: cuotas.cuotaEmpate, cuotaVisitante: cuotas.cuotaVisitante,
-      probBaseLocal: cuotas.probabilidades.local,
-      probBaseEmpate: cuotas.probabilidades.empate,
-      probBaseVisitante: cuotas.probabilidades.visitante,
-      margen: margenVal,
+      probBaseLocal: probs.probBaseLocal,
+      probBaseEmpate: probs.probBaseEmpate,
+      probBaseVisitante: probs.probBaseVisitante,
+      margen: MARGEN_DEFAULT,
       montoApostadoLocal: 0, montoApostadoEmpate: 0, montoApostadoVisitante: 0,
       fase: 'pre', minuto: 0, golesLocal: 0, golesVisitante: 0,
       rojaLocal: 0, rojaVisitante: 0, historialEventos: '[]'
     });
 
-    return res.status(201).json({ evento, cuotasCalculadas: cuotas });
+    return res.status(201).json({ evento, cuotasCalculadas: cuotas, probabilidadesBase: probs });
   }
 
   if (req.method === 'GET' && sub === 'eventos') {
@@ -111,7 +158,10 @@ module.exports = async (req, res) => {
 
       // Actualizar historial
       const historial = JSON.parse(evento.historialEventos || '[]');
-      const minutoActual = minuto || parseInt(evento.minuto) || 0;
+      // Calcular minuto automáticamente si no se envía explícitamente
+      const minutoActual = (minuto !== undefined && minuto !== null && minuto !== '')
+        ? parseInt(minuto)
+        : calcularMinutoAutomatico(evento);
 
       historial.push({ tipo, minuto: minutoActual, timestamp: new Date().toISOString() });
 
@@ -166,7 +216,25 @@ module.exports = async (req, res) => {
       const evento = await Evento.findByPk(id);
       if (!evento) return res.status(404).json({ error: 'Evento no encontrado' });
 
-      await evento.update({ minuto: parseInt(minuto) || evento.minuto, ...(fase && { fase }) });
+      const updates = { ...(fase && { fase }) };
+
+      // Si el partido acaba de iniciar la primera mitad, guardar hora de inicio
+      if (fase === 'primera_mitad' && evento.fase !== 'primera_mitad') {
+        updates.inicioPartido = new Date();
+        updates.minuto = 1;
+      } else if (fase === 'segunda_mitad' && evento.fase !== 'segunda_mitad') {
+        // No reseteamos inicioPartido; calcularMinutoAutomatico lo maneja con offset
+        updates.minuto = 46;
+      } else {
+        // Minuto manual sólo si se envía explícitamente
+        if (minuto !== undefined && minuto !== null && minuto !== '') {
+          updates.minuto = parseInt(minuto);
+        } else {
+          updates.minuto = calcularMinutoAutomatico({ ...evento.toJSON(), ...(fase && { fase }) });
+        }
+      }
+
+      await evento.update(updates);
 
       const eventoActualizado = await Evento.findByPk(id);
       const nuevasCuotas = recalcularCuotasDinamicas(eventoActualizado);
@@ -176,7 +244,12 @@ module.exports = async (req, res) => {
         cuotaVisitante: nuevasCuotas.cuotaVisitante
       });
 
-      return res.json({ message: 'Minuto actualizado', nuevasCuotas, evento: eventoActualizado });
+      return res.json({
+        message: 'Fase/minuto actualizado',
+        minutoActual: eventoActualizado.minuto,
+        nuevasCuotas,
+        evento: eventoActualizado
+      });
     } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
