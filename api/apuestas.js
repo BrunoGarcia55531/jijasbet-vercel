@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getModels } = require('./models/db');
+const { recalcularCuotasDinamicas } = require('./utils/calcularCuotas');
 
 const SECRET = process.env.JWT_SECRET || 'tu_secret_key_muy_seguro';
 
@@ -21,7 +22,6 @@ module.exports = async (req, res) => {
 
   const urlParts = req.url.split('?')[0].split('/').filter(Boolean);
   const sub = urlParts[2];
-  const action = urlParts[3];
 
   // GET /api/apuestas/mis-apuestas
   if (req.method === 'GET' && sub === 'mis-apuestas') {
@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     } catch (e) { return res.status(401).json({ error: e.message }); }
   }
 
-  // POST /api/apuestas
+  // POST /api/apuestas — crear apuesta y recalcular cuotas
   if (req.method === 'POST' && !sub) {
     try {
       const decoded = verificarToken(req);
@@ -60,37 +60,54 @@ module.exports = async (req, res) => {
 
       const evento = await Evento.findByPk(eventoId);
       if (!evento) return res.status(404).json({ error: 'Evento no encontrado' });
+      if (evento.estado !== 'activo') return res.status(400).json({ error: 'Este evento ya no acepta apuestas' });
 
+      // Cuota al momento de apostar (se congela en la apuesta)
       let cuotaApuesta = 1;
-      if (tipoApuesta === 'local')     cuotaApuesta = parseFloat(evento.cuotaLocal)    || 1;
-      if (tipoApuesta === 'empate')    cuotaApuesta = parseFloat(evento.cuotaEmpate)   || 1;
-      if (tipoApuesta === 'visitante') cuotaApuesta = parseFloat(evento.cuotaVisitante) || 1;
+      if (tipoApuesta === 'local')     cuotaApuesta = parseFloat(evento.cuotaLocal);
+      if (tipoApuesta === 'empate')    cuotaApuesta = parseFloat(evento.cuotaEmpate);
+      if (tipoApuesta === 'visitante') cuotaApuesta = parseFloat(evento.cuotaVisitante);
 
       // Descontar saldo
       await usuario.update({ saldo: saldoActual - monto });
 
+      // Registrar apuesta con la cuota actual congelada
       const apuesta = await Apuesta.create({
         usuarioId: decoded.id, eventoId,
         nombreUsuario: usuario.nombre, tipoApuesta,
-        montoApuesta: monto, cuota: cuotaApuesta,
-        montoGanancia: monto * cuotaApuesta,
-        estado: 'activa' // automáticamente verificado al pagar con saldo
+        montoApuesta: monto,
+        cuota: cuotaApuesta,
+        montoGanancia: +(monto * cuotaApuesta).toFixed(2),
+        estado: 'activa'
+      });
+
+      // ── Actualizar volumen apostado en el evento y recalcular cuotas ──
+      const campoMonto = {
+        local:     'montoApostadoLocal',
+        empate:    'montoApostadoEmpate',
+        visitante: 'montoApostadoVisitante'
+      }[tipoApuesta];
+
+      const nuevoMonto = parseFloat(evento[campoMonto] || 0) + monto;
+      await evento.update({ [campoMonto]: nuevoMonto });
+
+      // Recalcular cuotas con el nuevo volumen
+      const eventoActualizado = await Evento.findByPk(eventoId);
+      const nuevasCuotas = recalcularCuotasDinamicas(eventoActualizado);
+      await eventoActualizado.update({
+        cuotaLocal:     nuevasCuotas.cuotaLocal,
+        cuotaEmpate:    nuevasCuotas.cuotaEmpate,
+        cuotaVisitante: nuevasCuotas.cuotaVisitante
       });
 
       const apuestaConEvento = await Apuesta.findByPk(apuesta.id, { include: [Evento] });
-      return res.json({ apuesta: apuestaConEvento, saldoRestante: saldoActual - monto });
+      return res.json({
+        apuesta: apuestaConEvento,
+        saldoRestante: saldoActual - monto,
+        cuotaCongelada: cuotaApuesta,
+        nuevasCuotas    // para mostrar en UI que las cuotas cambiaron
+      });
     } catch (e) { return res.status(500).json({ error: e.message }); }
-  }
-
-  // GET /api/apuestas/:id
-  if (req.method === 'GET' && sub) {
-    try {
-      verificarToken(req);
-      const { Apuesta } = await getModels();
-      const apuesta = await Apuesta.findByPk(sub);
-      if (!apuesta) return res.status(404).json({ error: 'Apuesta no encontrada' });
-      return res.json(apuesta);
-    } catch (e) { return res.status(401).json({ error: e.message }); }
   }
 
   return res.status(404).json({ error: 'Ruta no encontrada' });
