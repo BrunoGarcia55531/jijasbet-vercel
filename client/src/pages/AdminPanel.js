@@ -1,19 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
-const MARGEN_DEFAULT = 8;
-
-function calcularCuotasLocal(pL, pE, pV, margenPct = MARGEN_DEFAULT) {
-  const suma = pL + pE + pV;
-  if (suma <= 0) return null;
-  const m = margenPct / 100;
-  const cL = Math.max(1.05, Math.min(50, 1 / ((pL/suma) * (1 + m))));
-  const cE = Math.max(1.05, Math.min(50, 1 / ((pE/suma) * (1 + m))));
-  const cV = Math.max(1.05, Math.min(50, 1 / ((pV/suma) * (1 + m))));
-  const ovr = 1/cL + 1/cE + 1/cV;
-  return { cuotaLocal: +cL.toFixed(3), cuotaEmpate: +cE.toFixed(3), cuotaVisitante: +cV.toFixed(3), margenEfectivo: +((ovr-1)*100).toFixed(2) };
-}
-
 const FASES = [
   { value: 'pre',            label: '🕐 Pre-partido' },
   { value: 'primera_mitad',  label: '▶️ 1ª Mitad' },
@@ -51,9 +38,7 @@ function AdminPanel({ token }) {
   // Crear evento
   const [nuevoEvento, setNuevoEvento] = useState({
     equipoLocal: '', equipoVisitante: '', liga: 'Primera División',
-    fechaPartido: '', horaPartido: '',
-    probLocal: '45', probEmpate: '25', probVisitante: '30',
-    margen: String(MARGEN_DEFAULT)
+    fechaPartido: '', horaPartido: ''
   });
   const [cargandoEvento, setCargandoEvento] = useState(false);
   const [mensajeEvento, setMensajeEvento]   = useState('');
@@ -61,7 +46,6 @@ function AdminPanel({ token }) {
 
   // Panel en vivo
   const [eventoLive, setEventoLive]           = useState(null);
-  const [minutoInput, setMinutoInput]         = useState('');
   const [faseInput, setFaseInput]             = useState('');
   const [registrandoEvento, setRegistrandoEvento] = useState(false);
   const [mensajeLive, setMensajeLive]         = useState('');
@@ -101,21 +85,11 @@ function AdminPanel({ token }) {
     return () => clearInterval(intervalo);
   }, [cargarDatos]);
 
-  const previewCrear = calcularCuotasLocal(
-    parseFloat(nuevoEvento.probLocal) || 0,
-    parseFloat(nuevoEvento.probEmpate) || 0,
-    parseFloat(nuevoEvento.probVisitante) || 0,
-    parseFloat(nuevoEvento.margen) || MARGEN_DEFAULT
-  );
-  const sumaProbs = (parseFloat(nuevoEvento.probLocal)||0) + (parseFloat(nuevoEvento.probEmpate)||0) + (parseFloat(nuevoEvento.probVisitante)||0);
-
   const handleCrearEvento = async (e) => {
     e.preventDefault();
     setErrorEvento(''); setMensajeEvento('');
     if (!nuevoEvento.equipoLocal || !nuevoEvento.equipoVisitante || !nuevoEvento.fechaPartido)
       return setErrorEvento('Completa los campos requeridos');
-    if (sumaProbs < 90 || sumaProbs > 110)
-      return setErrorEvento(`Las probabilidades deben sumar ~100% (ahora: ${sumaProbs.toFixed(1)}%)`);
     setCargandoEvento(true);
     try {
       const fechaHora = nuevoEvento.horaPartido
@@ -123,13 +97,12 @@ function AdminPanel({ token }) {
         : `${nuevoEvento.fechaPartido}T00:00:00`;
       const res = await axios.post('/api/admin/eventos', {
         equipoLocal: nuevoEvento.equipoLocal, equipoVisitante: nuevoEvento.equipoVisitante,
-        liga: nuevoEvento.liga, fechaPartido: fechaHora,
-        probLocal: parseFloat(nuevoEvento.probLocal), probEmpate: parseFloat(nuevoEvento.probEmpate),
-        probVisitante: parseFloat(nuevoEvento.probVisitante), margen: parseFloat(nuevoEvento.margen) || MARGEN_DEFAULT
+        liga: nuevoEvento.liga, fechaPartido: fechaHora
       }, { headers: { Authorization: `Bearer ${token}` } });
       const c = res.data.cuotasCalculadas;
-      setMensajeEvento(`✅ Creado — Cuotas: L ${c.cuotaLocal} / E ${c.cuotaEmpate} / V ${c.cuotaVisitante}`);
-      setNuevoEvento({ equipoLocal: '', equipoVisitante: '', liga: 'Primera División', fechaPartido: '', horaPartido: '', probLocal: '45', probEmpate: '25', probVisitante: '30', margen: String(MARGEN_DEFAULT) });
+      const p = res.data.probabilidadesBase;
+      setMensajeEvento(`✅ Creado — Cuotas: L ${c.cuotaLocal} / E ${c.cuotaEmpate} / V ${c.cuotaVisitante} (probs auto: ${Math.round(p.probBaseLocal*100)}/${Math.round(p.probBaseEmpate*100)}/${Math.round(p.probBaseVisitante*100)}%)`);
+      setNuevoEvento({ equipoLocal: '', equipoVisitante: '', liga: 'Primera División', fechaPartido: '', horaPartido: '' });
       cargarDatos();
     } catch (err) { setErrorEvento(err.response?.data?.error || 'Error'); }
     finally { setCargandoEvento(false); }
@@ -142,8 +115,8 @@ function AdminPanel({ token }) {
     try {
       const res = await axios.post(`/api/admin/eventos/${eventoLive.id}/live`, {
         tipo,
-        minuto: parseInt(minutoInput) || parseInt(eventoLive.minuto) || 0,
         fase: faseInput || eventoLive.fase
+        // minuto se calcula automáticamente en el servidor
       }, { headers: { Authorization: `Bearer ${token}` } });
 
       const nc = res.data.nuevasCuotas;
@@ -164,13 +137,13 @@ function AdminPanel({ token }) {
   };
 
   const handleActualizarMinuto = async () => {
-    if (!eventoLive || !minutoInput) return;
+    if (!eventoLive || !faseInput) return;
     try {
-      await axios.put(`/api/admin/eventos/${eventoLive.id}/minuto`,
-        { minuto: parseInt(minutoInput), fase: faseInput || undefined },
+      const res = await axios.put(`/api/admin/eventos/${eventoLive.id}/minuto`,
+        { fase: faseInput },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setMensajeLive(`✅ Minuto actualizado a ${minutoInput}`);
+      setMensajeLive(`✅ Fase cambiada → ${faseInput}. Minuto automático: ${res.data.minutoActual}'`);
       cargarDatos();
     } catch (err) { setMensajeLive('❌ Error: ' + err.response?.data?.error); }
   };
@@ -238,7 +211,7 @@ function AdminPanel({ token }) {
           <div className="card" style={{ marginBottom: '2rem' }}>
             <h2 style={{ marginBottom: '0.5rem' }}>📅 Crear Nuevo Evento</h2>
             <p style={{ color: '#999', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-              Ingresa probabilidades estimadas (%) — las cuotas se calculan con margen del {nuevoEvento.margen}%.
+              Las cuotas se generan automáticamente con IA. Solo ingresa los equipos, liga y fecha.
             </p>
             {errorEvento   && <div className="alert alert-error">{errorEvento}</div>}
             {mensajeEvento && <div className="alert alert-success">{mensajeEvento}</div>}
@@ -263,34 +236,13 @@ function AdminPanel({ token }) {
                 <div><label>Hora (opcional)</label><input type="time" value={nuevoEvento.horaPartido} onChange={e => setNuevoEvento({...nuevoEvento, horaPartido: e.target.value})} /></div>
               </div>
 
-              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <strong style={{ color: 'white' }}>🎯 Probabilidades estimadas (%)</strong>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <label style={{ color: '#999', fontSize: '0.85rem' }}>Margen:</label>
-                    <input type="number" step="0.5" min="2" max="25" value={nuevoEvento.margen} onChange={e => setNuevoEvento({...nuevoEvento, margen: e.target.value})} style={{ width: '65px' }} />
-                    <span style={{ color: '#999', fontSize: '0.85rem' }}>%</span>
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                  {[
-                    { key: 'probLocal',     label: `🏠 ${nuevoEvento.equipoLocal || 'Local'}`,       cuota: previewCrear?.cuotaLocal },
-                    { key: 'probEmpate',    label: '🤝 Empate',                                        cuota: previewCrear?.cuotaEmpate },
-                    { key: 'probVisitante', label: `✈️ ${nuevoEvento.equipoVisitante || 'Visitante'}`, cuota: previewCrear?.cuotaVisitante }
-                  ].map(({ key, label, cuota }) => (
-                    <div key={key}>
-                      <label style={{ fontSize: '0.85rem' }}>{label}</label>
-                      <input type="number" step="0.5" min="1" max="98" value={nuevoEvento[key]} onChange={e => setNuevoEvento({...nuevoEvento, [key]: e.target.value})} />
-                      {cuota && <div style={{ textAlign: 'center', marginTop: '0.3rem' }}><span style={{ background: '#f0c040', color: '#1a1a2e', borderRadius: '4px', padding: '0.15rem 0.5rem', fontWeight: 'bold', fontSize: '0.95rem' }}>{cuota}x</span></div>}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#999', fontSize: '0.85rem' }}>Suma: <strong style={{ color: Math.abs(sumaProbs - 100) <= 5 ? '#4CAF50' : '#e74c3c' }}>{sumaProbs.toFixed(1)}%</strong></span>
-                  {previewCrear && <span style={{ color: '#999', fontSize: '0.85rem' }}>Margen efectivo: <strong style={{ color: '#f0c040' }}>{previewCrear.margenEfectivo}%</strong></span>}
-                </div>
+              <div style={{ background: 'rgba(240,192,64,0.08)', border: '1px solid rgba(240,192,64,0.3)', borderRadius: '10px', padding: '1rem', marginBottom: '1.5rem' }}>
+                <p style={{ color: '#f0c040', fontSize: '0.85rem', margin: 0 }}>
+                  🤖 Las probabilidades y cuotas se calculan <strong>automáticamente</strong> basándose en el historial de enfrentamientos, la liga y la ventaja de local. Margen de casa fijo: <strong>8%</strong>.
+                </p>
               </div>
-              <button type="submit" className="btn btn-success" disabled={cargandoEvento || !previewCrear}>
+
+              <button type="submit" className="btn btn-success" disabled={cargandoEvento}>
                 {cargandoEvento ? 'Creando...' : '✅ Crear Evento'}
               </button>
             </form>
@@ -319,15 +271,15 @@ function AdminPanel({ token }) {
                         )}
                       </td>
                       <td style={{ fontSize: '0.9rem' }}>
-                        🏠 <strong style={{ color: '#f0c040' }}>{Number(ev.cuotaLocal).toFixed(3)}x</strong><br />
-                        🤝 {Number(ev.cuotaEmpate).toFixed(3)}x<br />
-                        ✈️ <strong style={{ color: '#f0c040' }}>{Number(ev.cuotaVisitante).toFixed(3)}x</strong>
+                        🏠 <strong style={{ color: '#f0c040' }}>{Number(ev.cuotaLocal).toFixed(2)}x</strong><br />
+                        🤝 {Number(ev.cuotaEmpate).toFixed(2)}x<br />
+                        ✈️ <strong style={{ color: '#f0c040' }}>{Number(ev.cuotaVisitante).toFixed(2)}x</strong>
                       </td>
                       <td><span style={{ color: ev.estado === 'activo' ? '#4CAF50' : ev.estado === 'finalizado' ? '#888' : '#e74c3c', fontWeight: 'bold', textTransform: 'capitalize' }}>{ev.estado}</span></td>
                       <td>
                         {ev.estado === 'activo' && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            <button className="btn btn-warning" style={{ fontSize: '0.78rem', padding: '0.3rem 0.6rem' }} onClick={() => { setEventoLive(ev); setMinutoInput(String(ev.minuto || '')); setFaseInput(ev.fase || 'pre'); setPestaña('live'); }}>🔴 Control Live</button>
+                            <button className="btn btn-warning" style={{ fontSize: '0.78rem', padding: '0.3rem 0.6rem' }} onClick={() => { setEventoLive(ev); setFaseInput(ev.fase || 'pre'); setPestaña('live'); }}>🔴 Control Live</button>
                             <button className="btn btn-success" style={{ fontSize: '0.78rem', padding: '0.3rem 0.6rem' }} onClick={() => { setEventoResultado(ev); setResultadoSeleccionado(''); }}>🏁 Resultado</button>
                             <button className="btn btn-danger"  style={{ fontSize: '0.78rem', padding: '0.3rem 0.6rem' }} onClick={() => handleCancelarEvento(ev.id)}>🚫 Cancelar</button>
                           </div>
@@ -353,7 +305,7 @@ function AdminPanel({ token }) {
               <select value={eventoLive?.id || ''} onChange={e => {
                 const ev = eventos.find(ev => ev.id === parseInt(e.target.value));
                 setEventoLive(ev || null);
-                if (ev) { setMinutoInput(String(ev.minuto || '')); setFaseInput(ev.fase || 'pre'); }
+                if (ev) { setFaseInput(ev.fase || 'pre'); }
                 setMensajeLive('');
               }}>
                 <option value="">-- Elige un partido activo --</option>
@@ -373,6 +325,9 @@ function AdminPanel({ token }) {
                 <div className="card" style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
                   <p style={{ color: '#ccc', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
                     {eventoLive.liga} · {FASES.find(f => f.value === eventoLive.fase)?.label || eventoLive.fase}
+                    {eventoLive.fase !== 'pre' && eventoLive.fase !== 'descanso' && eventoLive.fase !== 'finalizado' && (
+                      <span style={{ color: '#f0c040', marginLeft: '0.5rem' }}>· {eventoLive.minuto}'</span>
+                    )}
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', marginBottom: '1rem' }}>
                     <div style={{ textAlign: 'center' }}>
@@ -403,29 +358,26 @@ function AdminPanel({ token }) {
                     ].map(({ label, cuota }) => (
                       <div key={label} style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '0.75rem' }}>
                         <div style={{ color: '#ccc', fontSize: '0.8rem', marginBottom: '0.3rem' }}>{label}</div>
-                        <div style={{ color: '#f0c040', fontSize: '1.4rem', fontWeight: 'bold' }}>{Number(cuota).toFixed(3)}x</div>
+                        <div style={{ color: '#f0c040', fontSize: '1.4rem', fontWeight: 'bold' }}>{Number(cuota).toFixed(2)}x</div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Minuto y fase */}
+                {/* Fase del partido */}
                 <div className="card" style={{ marginBottom: '1.5rem' }}>
-                  <h3 style={{ marginBottom: '1rem' }}>🕐 Minuto y Fase</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.85rem' }}>Minuto</label>
-                      <input type="number" min="0" max="120" value={minutoInput} onChange={e => setMinutoInput(e.target.value)} placeholder="Ej: 45" />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.85rem' }}>Fase del partido</label>
-                      <select value={faseInput} onChange={e => setFaseInput(e.target.value)}>
-                        {FASES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
-                    </div>
+                  <h3 style={{ marginBottom: '1rem' }}>🕐 Fase del partido</h3>
+                  <p style={{ color: '#999', fontSize: '0.82rem', marginBottom: '1rem' }}>
+                    ⏱ El minuto se calcula automáticamente desde que inicia cada mitad.
+                  </p>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ fontSize: '0.85rem' }}>Fase actual</label>
+                    <select value={faseInput} onChange={e => setFaseInput(e.target.value)}>
+                      {FASES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
                   </div>
                   <button className="btn btn-warning" style={{ width: '100%' }} onClick={handleActualizarMinuto}>
-                    Actualizar minuto / fase
+                    Cambiar fase
                   </button>
                 </div>
               </div>
@@ -509,7 +461,7 @@ function AdminPanel({ token }) {
                     <td><strong>{a.Evento?.equipoLocal} vs {a.Evento?.equipoVisitante}</strong><br /><small style={{ color: '#666' }}>{a.Evento?.liga}</small></td>
                     <td>{a.tipoApuesta === 'local' && `🏠 ${a.Evento?.equipoLocal}`}{a.tipoApuesta === 'empate' && '🤝 Empate'}{a.tipoApuesta === 'visitante' && `✈️ ${a.Evento?.equipoVisitante}`}</td>
                     <td>S/. {Number(a.montoApuesta).toFixed(2)}</td>
-                    <td>{Number(a.cuota||1).toFixed(3)}x</td>
+                    <td>{Number(a.cuota||1).toFixed(2)}x</td>
                     <td>S/. {Number(a.montoGanancia).toFixed(2)}</td>
                     <td><span style={{ color: a.estado==='ganada'?'#4CAF50':a.estado==='perdida'?'#e74c3c':a.estado==='cancelada'?'#888':'#f0c040', fontWeight:'bold' }}>{a.estado==='ganada'?'✅':a.estado==='perdida'?'❌':a.estado==='cancelada'?'🚫':'⏳'} {a.estado}</span></td>
                   </tr>
