@@ -1,5 +1,5 @@
 /**
- * Motor de cálculo de cuotas — margen 8% + ajuste por eventos del partido en vivo.
+ * Motor de cálculo de cuotas — margen 12% + ajuste por eventos del partido en vivo.
  *
  * FÓRMULA BASE:
  *   cuota = 1 / (probabilidad × (1 + margen))
@@ -13,9 +13,9 @@
  *   Mezcla 50% prob_evento + 50% distribución del dinero apostado.
  */
 
-const MARGEN_DEFAULT = 0.08;
+const MARGEN_DEFAULT = 0.18;
 const CUOTA_MIN = 1.05;
-const CUOTA_MAX = 50.0;
+const CUOTA_MAX = 8.0;
 
 // ─── Impacto de cada evento sobre las probabilidades ───────────────────────
 // Formato: [factorLocal, factorEmpate, factorVisitante]
@@ -82,9 +82,9 @@ function calcularCuotas(pL, pE, pV, margen = MARGEN_DEFAULT) {
  * sobre las probabilidades base, más el factor de tiempo/marcador.
  */
 function probsDesdeEventos(evento) {
-  let pL = parseFloat(evento.probBaseLocal)     || 0.35;
-  let pE = parseFloat(evento.probBaseEmpate)    || 0.30;
-  let pV = parseFloat(evento.probBaseVisitante) || 0.35;
+  let pL = parseFloat(evento.probBaseLocal)     || 0.55;
+  let pE = parseFloat(evento.probBaseEmpate)    || 0.27;
+  let pV = parseFloat(evento.probBaseVisitante) || 0.18;
 
   const historial = JSON.parse(evento.historialEventos || '[]');
 
@@ -157,9 +157,9 @@ function cuotasDesdeProbs(pLPct, pEPct, pVPct, margenPct = 8) {
  */
 function calcularProbsAutomaticas(equipoLocal, equipoVisitante, liga, historialGlobal = []) {
   // ── 1. Base: ventaja local ──────────────────────────────────────────────
-  let pL = 0.42;   // local siempre parte con ligera ventaja
+  let pL = 0.55;   // local parte con ventaja clara (cuotas más conservadoras)
   let pE = 0.27;
-  let pV = 0.31;
+  let pV = 0.18;
 
   // ── 2. Factor liga (ligas con más empates vs ligas goleadoras) ──────────
   const FACTOR_LIGA = {
