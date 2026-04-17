@@ -40,6 +40,9 @@ module.exports = (sequelize) => {
     // Historial de eventos del partido (JSON array)
     historialEventos: { type: DataTypes.TEXT, defaultValue: '[]' },
 
+    // Momento en que el partido comenzó (para calcular minuto automáticamente)
+    inicioPartido:   { type: DataTypes.DATE, allowNull: true },
+
     resultadoPartido: DataTypes.STRING,
     estado: {
       type: DataTypes.ENUM('activo', 'finalizado', 'cancelado'),
