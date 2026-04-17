@@ -93,7 +93,7 @@ function AdminPanel({ token }) {
       }
     } catch (error) { console.error(error); }
     finally { setLoading(false); }
-  }, [token, eventoLive?.id]);
+  }, [token, eventoLive?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     cargarDatos();
