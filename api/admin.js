@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { getModels } = require('./models/db');
-const { calcularCuotas, recalcularCuotasDinamicas, cuotasDesdeProbs, calcularProbsAutomaticas } = require('./utils/calcularCuotas');
+const { calcularCuotas, recalcularCuotasDinamicas, cuotasDesdeProbs, calcularCuotasBase } = require('./utils/calcularCuotas');
+const { obtenerCuotasBase, verificarCreditos } = require('./utils/oddsProvider');
 
 const SECRET = process.env.JWT_SECRET || 'tu_secret_key_muy_seguro';
 
@@ -91,6 +92,12 @@ module.exports = async (req, res) => {
     return res.json({ totalApuestas, apuestasActivas, apuestasGanadas, apuestasPerdidas, totalMonto });
   }
 
+  // ── CRÉDITOS ODDS API ──
+  if (req.method === 'GET' && sub === 'odds-credits') {
+    const creditos = await verificarCreditos();
+    return res.json(creditos || { error: 'Sin API key configurada. Agrega ODDS_API_KEY en las variables de entorno.' });
+  }
+
   // ── CREAR EVENTO ── (solo si NO hay :id en la URL)
   if (req.method === 'POST' && sub === 'eventos' && !id) {
     const { equipoLocal, equipoVisitante, liga, fechaPartido } = req.body;
@@ -100,33 +107,44 @@ module.exports = async (req, res) => {
     // Obtener historial de eventos finalizados para calcular probabilidades automáticas
     const eventosFinalizados = await Evento.findAll({
       where: { estado: 'finalizado' },
-      attributes: ['equipoLocal', 'equipoVisitante', 'liga', 'resultadoPartido'],
+      attributes: ['equipoLocal', 'equipoVisitante', 'liga', 'resultadoPartido', 'golesLocal', 'golesVisitante'],
       order: [['createdAt', 'ASC']]
     });
     const historialGlobal = eventosFinalizados.map(e => ({
-      equipoLocal: e.equipoLocal,
+      equipoLocal:     e.equipoLocal,
       equipoVisitante: e.equipoVisitante,
-      liga: e.liga,
-      resultado: e.resultadoPartido
+      liga:            e.liga,
+      resultado:       e.resultadoPartido,
+      golesLocal:      e.golesLocal     || 0,
+      golesVisitante:  e.golesVisitante || 0,
     }));
 
-    const probs = calcularProbsAutomaticas(equipoLocal, equipoVisitante, liga || 'Primera División', historialGlobal);
-    const MARGEN_DEFAULT = 0.18;
-    const cuotas = calcularCuotas(probs.probBaseLocal, probs.probBaseEmpate, probs.probBaseVisitante, MARGEN_DEFAULT);
+
+    // Intentar obtener cuotas de mercado real (The Odds API)
+    // Si no hay API key o no se encuentra el partido → fallback automático a Poisson
+    const bases = await obtenerCuotasBase(
+      equipoLocal, equipoVisitante,
+      liga || 'Primera División',
+      fechaPartido,
+      historialGlobal
+    );
 
     const evento = await Evento.create({
       equipoLocal, equipoVisitante, liga, fechaPartido,
-      cuotaLocal: cuotas.cuotaLocal, cuotaEmpate: cuotas.cuotaEmpate, cuotaVisitante: cuotas.cuotaVisitante,
-      probBaseLocal: probs.probBaseLocal,
-      probBaseEmpate: probs.probBaseEmpate,
-      probBaseVisitante: probs.probBaseVisitante,
-      margen: MARGEN_DEFAULT,
+      cuotaLocal:          bases.cuotaBaseLocal,
+      cuotaEmpate:         bases.cuotaBaseEmpate,
+      cuotaVisitante:      bases.cuotaBaseVisitante,
+      cuotaBaseLocal:      bases.cuotaBaseLocal,
+      cuotaBaseEmpate:     bases.cuotaBaseEmpate,
+      cuotaBaseVisitante:  bases.cuotaBaseVisitante,
+      margen: 0.18,
       montoApostadoLocal: 0, montoApostadoEmpate: 0, montoApostadoVisitante: 0,
       fase: 'pre', minuto: 0, golesLocal: 0, golesVisitante: 0,
       rojaLocal: 0, rojaVisitante: 0, historialEventos: '[]'
     });
 
-    return res.status(201).json({ evento, cuotasCalculadas: cuotas, probabilidadesBase: probs });
+    return res.status(201).json({ evento, cuotasCalculadas: bases });
+  }
   }
 
   if (req.method === 'GET' && sub === 'eventos') {
